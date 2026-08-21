@@ -72,6 +72,16 @@ To retain those DeepSeek services:
 ./install.ps1 -KeepDeepSeekApi
 ```
 
+### One-click Windows launcher
+
+Create Desktop and Start-menu shortcuts that open DSH Web without a visible terminal:
+
+```powershell
+./launcher/Install-DSHWebShortcut.ps1
+```
+
+The shortcut reuses an existing server on port `3080`. Otherwise it starts `dsh web --no-open` in a hidden process, waits for the local server, and opens the default browser. Startup diagnostics are written to `~/.dsh/logs/`.
+
 ## Verify
 
 ```powershell
