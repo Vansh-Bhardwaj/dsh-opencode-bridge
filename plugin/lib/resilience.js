@@ -1,8 +1,21 @@
 import { relative, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
-const NETWORK_FAILURE = /(?:finish_reason\s*:\s*network_error|network[_ -]error|socket|connection reset|fetch failed)/i;
+const NETWORK_FAILURE = /(?:finish_reason\s*:\s*network_error|network[_ -]error|socket|econnreset|connection reset|fetch failed|dns|enotfound)/i;
+const TIMEOUT_FAILURE = /(?:timed?\s*out|timeout|etimedout|headers timeout)/i;
+const CAPACITY_FAILURE = /(?:http\s*(?:429|502|503|504)|status\s*(?:429|502|503|504)|rate[_ -]?limit|too many requests|temporarily unavailable|service unavailable|overloaded|capacity)/i;
 const EDIT_MISS = /old_(?:string|str) was not found|FS_EDIT_NOT_FOUND/i;
+const EDIT_DUPLICATE = /old_(?:string|str) matched \d+ times|matched \d+ times/i;
+const READ_REQUIRED = /requires reading .* first|read the file, then retry/i;
+
+function retryReason(requestFailure) {
+  const rendered = `${requestFailure?.code || ''}\n${requestFailure?.message || ''}`;
+  if (/(?:context (?:length|window|capacity)|maximum context|max(?:imum)? tokens|invalid request|unauthorized|forbidden)/i.test(rendered)) return null;
+  if (NETWORK_FAILURE.test(rendered)) return 'network';
+  if (TIMEOUT_FAILURE.test(rendered)) return 'timeout';
+  if (CAPACITY_FAILURE.test(rendered)) return 'capacity';
+  return null;
+}
 
 function delay(ms, signal) {
   return new Promise((resolveDelay) => {
@@ -58,25 +71,42 @@ function closestExcerpt(content, oldText) {
   return lines.slice(start, start + 22).join('\n').slice(0, 3200);
 }
 
+function occurrenceContexts(content, oldText) {
+  if (!oldText) return '';
+  const lines = content.split('\n');
+  const firstLine = String(oldText).split('\n')[0].trim();
+  const matches = [];
+  for (let index = 0; index < lines.length; index++) {
+    if (firstLine && lines[index].includes(firstLine)) matches.push(index);
+  }
+  return matches.slice(0, 4).map((index, matchIndex) => {
+    const start = Math.max(0, index - 2);
+    const excerpt = lines.slice(start, index + 4).map((line, offset) => `${start + offset + 1}: ${line}`).join('\n');
+    return `Match ${matchIndex + 1}:\n${excerpt}`;
+  }).join('\n\n').slice(0, 4200);
+}
+
 export function installResilience(ctx, config = {}) {
   const maxRetries = Number.isSafeInteger(config.networkRetries) ? Math.max(0, Math.min(5, config.networkRetries)) : 3;
   const retryBaseMs = Number.isFinite(config.networkRetryBaseMs) ? Math.max(0, config.networkRetryBaseMs) : 750;
   const retryJitterMs = Number.isFinite(config.networkRetryJitterMs) ? Math.max(0, config.networkRetryJitterMs) : 250;
   const retryCounts = new Map();
-  const stats = { retries: 0, recoveredEditNoops: 0, guardedPaths: 0, editHints: 0, lastRecoveryAt: null };
+  const stats = { retries: 0, retryReasons: { network: 0, timeout: 0, capacity: 0 }, recoveredEditNoops: 0, recoveredLineEndings: 0, guardedPaths: 0, editHints: 0, lastRecoveryAt: null };
 
   ctx.on('agent/request-error', async (payload, next) => {
     const { failure: requestFailure, signal } = payload;
-    if (signal.aborted || !NETWORK_FAILURE.test(`${requestFailure.code}\n${requestFailure.message}`)) return next();
+    const reason = retryReason(requestFailure);
+    if (signal?.aborted || !reason) return next();
     const key = sessionKey(payload);
     const chain = retryCounts.get(key) || { attempt: 0, retryId: `ocui-${randomUUID()}` };
     const attempt = chain.attempt + 1;
     if (attempt > maxRetries) return next();
     retryCounts.set(key, { ...chain, attempt });
     stats.retries++;
+    stats.retryReasons[reason]++;
     stats.lastRecoveryAt = Date.now();
     const waitMs = Math.min(8_000, retryBaseMs * (2 ** (attempt - 1)) + Math.floor(Math.random() * retryJitterMs));
-    ctx.logger.warn(`ocui resilience: retrying ${payload.provider} network failure (${attempt}/${maxRetries}) in ${waitMs}ms`);
+    ctx.logger.warn(`ocui resilience: retrying ${payload.provider} ${reason} failure (${attempt}/${maxRetries}) in ${waitMs}ms`);
     payload.agent.session.append('llm/retry', {
       retryId: chain.retryId,
       turn: payload.turn,
@@ -84,7 +114,8 @@ export function installResilience(ctx, config = {}) {
       provider: payload.provider,
       mode: 'normal',
       maxRetries,
-      policyKey: 'ocui-network-error',
+      policyKey: `ocui-${reason}-error`,
+      reason,
       retry: attempt,
       delayMs: waitMs,
       failure: requestFailure,
@@ -127,13 +158,31 @@ export function installResilience(ctx, config = {}) {
         return next();
       }
     }
+    if (exec.name === 'edit' && typeof exec.arguments?.old_string === 'string' && /\r?\n/.test(exec.arguments.old_string)) {
+      try {
+        const target = await ctx.fs.resolve(exec.arguments.file_path, { ...(cwd ? { cwd } : {}), signal: exec.signal });
+        const content = await ctx.fs.readText(target, exec.signal);
+        if (!content.includes(exec.arguments.old_string)) {
+          const lineEnding = content.includes('\r\n') ? '\r\n' : '\n';
+          const adjusted = exec.arguments.old_string.replace(/\r?\n/g, lineEnding);
+          if (adjusted !== exec.arguments.old_string && content.includes(adjusted)) {
+            exec.arguments.old_string = adjusted;
+            stats.recoveredLineEndings++;
+            stats.lastRecoveryAt = Date.now();
+          }
+        }
+      } catch { /* Let the canonical tool report file access errors. */ }
+    }
     return next();
   }, { global: true, prepend: true });
 
   ctx.on('tools/post-execute', async (exec, result, next) => {
     if (!result.isError || !['edit', 'str_replace_editor'].includes(exec.name)) return next();
     const rendered = `${result.error?.code || ''}\n${result.error?.message || ''}\n${textContent(result.content)}`;
-    if (!EDIT_MISS.test(rendered)) return next();
+    const isMiss = EDIT_MISS.test(rendered);
+    const isDuplicate = EDIT_DUPLICATE.test(rendered);
+    const isUnread = READ_REQUIRED.test(rendered);
+    if (!isMiss && !isDuplicate && !isUnread) return next();
     const args = exec.arguments || {};
     const filePath = exec.name === 'edit' ? args.file_path : args.path;
     const oldText = exec.name === 'edit' ? args.old_string : args.old_str;
@@ -142,13 +191,19 @@ export function installResilience(ctx, config = {}) {
       const cwd = exec.agent?.session.header.cwd;
       const target = await ctx.fs.resolve(filePath, { ...(cwd ? { cwd } : {}), signal: exec.signal });
       const content = await ctx.fs.readText(target, exec.signal);
-      const excerpt = closestExcerpt(content, oldText);
+      const excerpt = isDuplicate ? occurrenceContexts(content, oldText) : closestExcerpt(content, oldText);
       stats.editHints++;
+      stats.lastRecoveryAt = Date.now();
+      const guidance = isDuplicate
+        ? 'OCUI found the repeated edit target and mapped its locations. Use surrounding lines from one match to make old_string unique; do not repeat the ambiguous edit:'
+        : isUnread
+          ? 'OCUI read the current file for diagnosis. The mutation tool still requires an explicit Read call for audit safety; read this file once, then retry against the current text below:'
+          : 'OCUI recovery read the current file automatically. Rebuild the edit from this exact current excerpt, and do not repeat the stale old_string:';
       return {
         kind: 'accept',
         content: [...result.content, {
           type: 'text',
-          text: `\nOCUI recovery read the current file automatically. Rebuild the edit from this exact current excerpt, and do not repeat the stale old_string:\n\n${excerpt}`,
+          text: `\n${guidance}\n\n${excerpt}`,
         }],
       };
     } catch {

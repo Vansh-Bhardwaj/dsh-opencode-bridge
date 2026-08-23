@@ -551,7 +551,10 @@ window.__ModuleLoader__.load({
           state.bridge ? React.createElement('div', { className: 'oc-protection', title: 'Automatic transport retries, guarded workspace edits, and vision delegation are active' },
             React.createElement('span', { className: 'oc-protectionDot' }),
             React.createElement('strong', null, 'Harness protection'),
-            React.createElement('span', null, (state.bridge.resilience.retries || 0) + ' retries · vision ready')) : null,
+            React.createElement('span', null,
+              (state.bridge.resilience.retries || 0) + ' retries · ' +
+              ((state.bridge.resilience.recoveredEditNoops || 0) + (state.bridge.resilience.recoveredLineEndings || 0) + (state.bridge.resilience.editHints || 0)) + ' edit recoveries · ' +
+              (state.bridge.vision.route ? state.bridge.vision.route.name : 'vision ready'))) : null,
           state.ok ? React.createElement('div', { className: 'oc-panelFooter' },
             React.createElement('span', null, state.updatedAt ? ('Updated ' + new Date(state.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : 'Live usage'),
             React.createElement('a', { className: 'oc-manageLink', href: 'https://opencode.ai/workspace', target: '_blank', rel: 'noreferrer' }, 'Open dashboard ↗')) : null);

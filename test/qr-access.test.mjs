@@ -3,13 +3,16 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
-import { accessPage, injectShell } from '../gateway/lib/gateway.mjs';
+import { accessPage, injectShell, pairingUrls } from '../gateway/lib/gateway.mjs';
 
 const pairingUrl = 'http://192.168.1.4:3443/_bridge/pair?token=example-signed-one-time-token';
 
 test('access page renders a local QR target and hides it after consumption', () => {
-  const ready = accessPage([pairingUrl], false);
+  const secondUrl = pairingUrl.replace('192.168.1.4', '192.168.1.5');
+  const ready = accessPage([pairingUrl, secondUrl], false);
   assert.match(ready, /data-qr=/);
+  assert.equal((ready.match(/data-qr=/g) || []).length, 1);
+  assert.doesNotMatch(ready, /192\.168\.1\.5/);
   assert.match(ready, /_bridge\/qrcode\.js/);
   assert.match(ready, /127\.0\.0\.1:3080/);
   assert.match(ready, /port <code>3443<\/code>/);
@@ -17,6 +20,18 @@ test('access page renders a local QR target and hides it after consumption', () 
   const consumed = accessPage([pairingUrl], true);
   assert.doesNotMatch(consumed, /data-qr=/);
   assert.doesNotMatch(consumed, /example-signed-one-time-token/);
+});
+
+test('pairing selects one canonical private address', () => {
+  const urls = pairingUrls({
+    addresses: ['127.0.0.1', '192.168.1.4', '192.168.1.5'],
+    port: 3443,
+    secure: false,
+    secret: 'test-secret',
+    pairToken: 'test-pair',
+  });
+  assert.equal(urls.length, 1);
+  assert.match(urls[0], /^http:\/\/192\.168\.1\.4:3443\//);
 });
 
 test('vendored QR generator encodes a complete pairing URL as SVG', async () => {
@@ -41,6 +56,9 @@ test('mobile shell exposes the sessions drawer without the old status pill', asy
   assert.match(script, /data-shell-overlay/);
   assert.match(stylesheet, /data-dsh-mobile-sidebar-open/);
   assert.match(stylesheet, /safe-area-inset-top/);
+  assert.match(script, /Computer unavailable/);
+  assert.match(script, /Start a new session/);
+  assert.match(stylesheet, /data-dsh-mobile-composer-dock/);
   assert.doesNotMatch(`${script}\n${stylesheet}`, /Local remote|dsh-lan-status/);
 });
 

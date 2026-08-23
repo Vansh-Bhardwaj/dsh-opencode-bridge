@@ -12,6 +12,9 @@ All notable changes to this project will be documented in this file.
 - Disabled stale caching for the injected mobile shell assets so phone layout fixes apply immediately.
 - Restored iPhone LAN sessions with an early secure `crypto.randomUUID` compatibility bootstrap.
 - Reworked Settings into a full-screen, scroll-safe mobile layout with accessible horizontal sections.
+- Reduced Remote Access to one canonical default-route URL and one locally generated QR code.
+- Added a task-aware phone header, one-tap new sessions, reconnect feedback, swipe-to-close chats, keyboard-safe composition, and long-chat rendering containment.
+- Expanded bounded retries to provider timeouts and capacity errors, repaired CRLF-only edit mismatches, and added precise diagnostics for duplicate and read-before-edit failures.
 
 ## 2.0.0 - 2026-08-23
 
