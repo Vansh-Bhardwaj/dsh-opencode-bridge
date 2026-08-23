@@ -178,7 +178,10 @@ export function createGateway(options) {
     const entry = assets[pathname];
     if (!entry) return false;
     const asset = await loadAsset(undefined, entry[0], entry[1]);
-    send(response, 200, asset.body, { 'content-type': asset.contentType, 'cache-control': 'private, max-age=300' });
+    const cacheControl = pathname === '/_bridge/mobile.css' || pathname === '/_bridge/mobile.js'
+      ? 'no-store'
+      : 'private, max-age=300';
+    send(response, 200, asset.body, { 'content-type': asset.contentType, 'cache-control': cacheControl });
     return true;
   }
 

@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Fixed repeated launcher installs nesting the gateway directory and hardened late upstream proxy failures.
 - Replaced the desktop rail on phones with a touch-native sessions drawer, backdrop, app bar, and full-screen details treatment.
 - Removed the Local Remote status pill and preserved DSH-owned cookies through the authenticated gateway.
+- Disabled stale caching for the injected mobile shell assets so phone layout fixes apply immediately.
 
 ## 2.0.0 - 2026-08-23
 
