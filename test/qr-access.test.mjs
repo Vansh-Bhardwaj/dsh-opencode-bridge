@@ -30,3 +30,15 @@ test('vendored QR generator encodes a complete pairing URL as SVG', async () => 
   assert.match(svg, /<path/);
   assert.ok(code.getModuleCount() > 20);
 });
+
+test('mobile shell exposes the sessions drawer without the old status pill', async () => {
+  const [script, stylesheet] = await Promise.all([
+    readFile(new URL('../gateway/mobile/mobile.js', import.meta.url), 'utf8'),
+    readFile(new URL('../gateway/mobile/mobile.css', import.meta.url), 'utf8'),
+  ]);
+  assert.match(script, /Open chats and sessions/);
+  assert.match(script, /data-shell-overlay/);
+  assert.match(stylesheet, /data-dsh-mobile-sidebar-open/);
+  assert.match(stylesheet, /safe-area-inset-top/);
+  assert.doesNotMatch(`${script}\n${stylesheet}`, /Local remote|dsh-lan-status/);
+});

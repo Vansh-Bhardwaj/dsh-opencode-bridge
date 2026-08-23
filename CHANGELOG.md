@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 - Added locally generated QR codes to the computer-only Remote Access page.
 - Clarified the loopback DSH server and authenticated LAN gateway architecture in the pairing UI.
 - Fixed repeated launcher installs nesting the gateway directory and hardened late upstream proxy failures.
+- Replaced the desktop rail on phones with a touch-native sessions drawer, backdrop, app bar, and full-screen details treatment.
+- Removed the Local Remote status pill and preserved DSH-owned cookies through the authenticated gateway.
 
 ## 2.0.0 - 2026-08-23
 

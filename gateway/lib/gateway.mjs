@@ -40,6 +40,14 @@ function remoteIp(request) {
   return String(request.socket.remoteAddress || '').replace(/^::ffff:/, '');
 }
 
+export function withoutGatewayCookie(header) {
+  return String(header || '')
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part && !part.startsWith(`${COOKIE}=`))
+    .join('; ');
+}
+
 function portOpen(host, port, timeoutMs = 800) {
   return new Promise((resolveProbe) => {
     const socket = net.connect(port, host);
@@ -152,7 +160,9 @@ export function createGateway(options) {
     headers.host = `${upstreamHost}:${upstreamPort}`;
     headers.origin = `http://${upstreamHost}:${upstreamPort}`;
     headers['sec-fetch-site'] = 'same-origin';
-    delete headers.cookie;
+    const upstreamCookies = withoutGatewayCookie(request.headers.cookie);
+    if (upstreamCookies) headers.cookie = upstreamCookies;
+    else delete headers.cookie;
     delete headers['accept-encoding'];
     return headers;
   }

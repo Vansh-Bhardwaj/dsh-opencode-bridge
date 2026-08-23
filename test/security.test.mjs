@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isPrivateIpv4, originAllowed, parseCookies, signValue, verifyValue } from '../gateway/lib/security.mjs';
+import { withoutGatewayCookie } from '../gateway/lib/gateway.mjs';
 
 test('signed values reject tampering and expiry', () => {
   const secret = 'test-secret';
@@ -19,4 +20,12 @@ test('cookie and origin parsing is strict', () => {
   assert.deepEqual({ ...parseCookies('a=1; session=hello%20world') }, { a: '1', session: 'hello world' });
   assert.equal(originAllowed('http://192.168.1.5:3443', '192.168.1.5:3443', false), true);
   assert.equal(originAllowed('https://evil.test', '192.168.1.5:3443', false), false);
+});
+
+test('gateway authentication cookie is stripped without deleting DSH cookies', () => {
+  assert.equal(
+    withoutGatewayCookie('theme=dark; dsh_lan_session=signed-gateway-value; dsh_session=server-login'),
+    'theme=dark; dsh_session=server-login',
+  );
+  assert.equal(withoutGatewayCookie('dsh_lan_session=only-value'), '');
 });
