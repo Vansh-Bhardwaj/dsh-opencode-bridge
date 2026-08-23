@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { installResilience } from './resilience.js';
+import { installWorkflowGuidance } from './workflow.js';
 
 const DEFAULT_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 const VISION_ALIAS = 'qwen-plus-latest';
@@ -136,6 +137,7 @@ export function apply(ctx, config = {}) {
   const visionDescriptionChars = Number.isSafeInteger(config.visionDescriptionChars) ? config.visionDescriptionChars : 6000;
   const visionVisibleChars = Number.isSafeInteger(config.visionVisibleChars) ? config.visionVisibleChars : 1800;
   const resilience = installResilience(ctx, config);
+  const workflow = installWorkflowGuidance(ctx);
   const descriptionCache = new Map();
   const descriptionInflight = new Map();
   const selectionRefs = new Map();
@@ -506,7 +508,7 @@ export function apply(ctx, config = {}) {
   let gen = 0;
 
   ctx.connection.rpc.handle('/ocui', async (endpoint) => {
-    if (endpoint === 'status') return { ok: true, value: { ok: true, resilience: resilience.snapshot(), vision: { provider: visionProvider, configuredModel: configuredVisionModel, route: visionRouteCache } } };
+    if (endpoint === 'status') return { ok: true, value: { ok: true, resilience: resilience.snapshot(), workflow: workflow.snapshot(), vision: { provider: visionProvider, configuredModel: configuredVisionModel, route: visionRouteCache } } };
     if (endpoint !== 'usage') return rpcError('internal', 'unknown OCUI endpoint: ' + endpoint);
     if (cache && Date.now() - cacheAt < 30000) return { ok: true, value: cache };
     if (inflight) return inflight;

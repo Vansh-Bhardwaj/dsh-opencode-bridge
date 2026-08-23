@@ -28,6 +28,26 @@ function sessionKey(payload) {
   return `${payload.agent.session.id}:${payload.turn}:${payload.step}`;
 }
 
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function executionKey(exec) {
+  const sessionId = String(exec.agent?.session?.id || 'unknown');
+  return `${sessionId}:${exec.name}:${stableStringify(exec.arguments || {})}`;
+}
+
+function deterministicEditReason(rendered) {
+  if (EDIT_DUPLICATE.test(rendered)) return 'ambiguous';
+  if (READ_REQUIRED.test(rendered)) return 'unread';
+  if (EDIT_MISS.test(rendered)) return 'stale';
+  return null;
+}
+
 function mutationPath(exec) {
   const args = exec.arguments;
   if (!args || typeof args !== 'object') return null;
@@ -90,8 +110,11 @@ export function installResilience(ctx, config = {}) {
   const maxRetries = Number.isSafeInteger(config.networkRetries) ? Math.max(0, Math.min(5, config.networkRetries)) : 3;
   const retryBaseMs = Number.isFinite(config.networkRetryBaseMs) ? Math.max(0, config.networkRetryBaseMs) : 750;
   const retryJitterMs = Number.isFinite(config.networkRetryJitterMs) ? Math.max(0, config.networkRetryJitterMs) : 250;
+  const largeWriteGuardChars = Number.isFinite(config.largeWriteGuardChars) ? Math.max(1000, config.largeWriteGuardChars) : 12_000;
+  const maxWriteShrinkRatio = Number.isFinite(config.maxWriteShrinkRatio) ? Math.max(0.05, Math.min(0.95, config.maxWriteShrinkRatio)) : 0.25;
   const retryCounts = new Map();
-  const stats = { retries: 0, retryReasons: { network: 0, timeout: 0, capacity: 0 }, recoveredEditNoops: 0, recoveredLineEndings: 0, guardedPaths: 0, editHints: 0, lastRecoveryAt: null };
+  const failedExecutions = new Map();
+  const stats = { retries: 0, retryReasons: { network: 0, timeout: 0, capacity: 0 }, recoveredEditNoops: 0, recoveredLineEndings: 0, guardedPaths: 0, editHints: 0, repeatedFailureBlocks: 0, truncatingWritesBlocked: 0, lastRecoveryAt: null };
 
   ctx.on('agent/request-error', async (payload, next) => {
     const { failure: requestFailure, signal } = payload;
@@ -134,6 +157,8 @@ export function installResilience(ctx, config = {}) {
   ctx.on('agent/turn-stopping', ({ agent, turn }) => {
     const prefix = `${agent.session.id}:${turn}:`;
     for (const key of retryCounts.keys()) if (key.startsWith(prefix)) retryCounts.delete(key);
+    const executionPrefix = `${agent.session.id}:`;
+    for (const key of failedExecutions.keys()) if (key.startsWith(executionPrefix)) failedExecutions.delete(key);
   });
 
   ctx.on('tools/execute', async (exec, next) => {
@@ -142,6 +167,30 @@ export function installResilience(ctx, config = {}) {
     if (filePath && cwd && !config.allowOutsideWorkspace && !insideWorkspace(cwd, filePath)) {
       stats.guardedPaths++;
       return failure('OCUI_OUTSIDE_WORKSPACE', `Blocked ${exec.name} outside this session workspace (${cwd}): ${filePath}. Open that workspace explicitly before changing it.`);
+    }
+    const previousFailure = failedExecutions.get(executionKey(exec));
+    if (previousFailure) {
+      stats.repeatedFailureBlocks++;
+      stats.lastRecoveryAt = Date.now();
+      const correction = previousFailure.reason === 'ambiguous'
+        ? 'Make the replacement unique with surrounding lines from one occurrence.'
+        : previousFailure.reason === 'unread'
+          ? 'Read the current file first, then retry.'
+          : 'Read the current region and rebuild old_string from the exact current text.';
+      return failure('OCUI_REPEATED_FAILED_CALL', `Blocked an unchanged retry of a deterministic failed ${exec.name} call. ${correction} Do not submit identical arguments again.`);
+    }
+    if (exec.name === 'write' && typeof exec.arguments?.content === 'string' && !config.allowLargeWriteShrink) {
+      try {
+        const target = await ctx.fs.resolve(exec.arguments.file_path, { ...(cwd ? { cwd } : {}), signal: exec.signal });
+        const current = await ctx.fs.readText(target, exec.signal);
+        const removed = current.length - exec.arguments.content.length;
+        if (current.length >= largeWriteGuardChars && removed > current.length * maxWriteShrinkRatio) {
+          stats.truncatingWritesBlocked++;
+          stats.lastRecoveryAt = Date.now();
+          const percent = Math.round((removed / current.length) * 100);
+          return failure('OCUI_TRUNCATING_WRITE', `Blocked a full-file write that would remove ${percent}% of existing ${target.displayPath}. This usually means a generated rewrite lost the file tail. Read the complete file and preserve it, or use focused edits. Set allowLargeWriteShrink only for an intentional replacement.`);
+        }
+      } catch { /* New files and canonical file errors continue to the write tool. */ }
     }
     if (exec.name === 'edit' && exec.arguments?.old_string === exec.arguments?.new_string) {
       try {
@@ -177,19 +226,35 @@ export function installResilience(ctx, config = {}) {
   }, { global: true, prepend: true });
 
   ctx.on('tools/post-execute', async (exec, result, next) => {
-    if (!result.isError || !['edit', 'str_replace_editor'].includes(exec.name)) return next();
+    const filePath = mutationPath(exec);
+    const sessionId = String(exec.agent?.session?.id || 'unknown');
+    if (!result.isError) {
+      const readPath = exec.name === 'read' && (typeof exec.arguments?.file_path === 'string' ? exec.arguments.file_path : exec.arguments?.path);
+      if (typeof readPath === 'string') {
+        for (const [key, failed] of failedExecutions) {
+          if (key.startsWith(`${sessionId}:`) && failed.reason === 'unread' && failed.filePath === readPath) failedExecutions.delete(key);
+        }
+      } else if (filePath) {
+        for (const [key, failed] of failedExecutions) {
+          if (key.startsWith(`${sessionId}:`) && failed.filePath === filePath) failedExecutions.delete(key);
+        }
+      }
+      return next();
+    }
+    if (!['edit', 'str_replace_editor'].includes(exec.name)) return next();
     const rendered = `${result.error?.code || ''}\n${result.error?.message || ''}\n${textContent(result.content)}`;
-    const isMiss = EDIT_MISS.test(rendered);
-    const isDuplicate = EDIT_DUPLICATE.test(rendered);
-    const isUnread = READ_REQUIRED.test(rendered);
-    if (!isMiss && !isDuplicate && !isUnread) return next();
+    const reason = deterministicEditReason(rendered);
+    if (!reason) return next();
+    const isDuplicate = reason === 'ambiguous';
+    const isUnread = reason === 'unread';
     const args = exec.arguments || {};
-    const filePath = exec.name === 'edit' ? args.file_path : args.path;
+    const editPath = exec.name === 'edit' ? args.file_path : args.path;
     const oldText = exec.name === 'edit' ? args.old_string : args.old_str;
-    if (typeof filePath !== 'string' || typeof oldText !== 'string') return next();
+    if (typeof editPath !== 'string' || typeof oldText !== 'string') return next();
+    failedExecutions.set(executionKey(exec), { reason, filePath: editPath, at: Date.now() });
     try {
       const cwd = exec.agent?.session.header.cwd;
-      const target = await ctx.fs.resolve(filePath, { ...(cwd ? { cwd } : {}), signal: exec.signal });
+      const target = await ctx.fs.resolve(editPath, { ...(cwd ? { cwd } : {}), signal: exec.signal });
       const content = await ctx.fs.readText(target, exec.signal);
       const excerpt = isDuplicate ? occurrenceContexts(content, oldText) : closestExcerpt(content, oldText);
       stats.editHints++;
@@ -211,5 +276,5 @@ export function installResilience(ctx, config = {}) {
     }
   }, { global: true, prepend: true });
 
-  return { snapshot: () => ({ ...stats, activeRetryChains: retryCounts.size }) };
+  return { snapshot: () => ({ ...stats, activeRetryChains: retryCounts.size, rememberedDeterministicFailures: failedExecutions.size }) };
 }

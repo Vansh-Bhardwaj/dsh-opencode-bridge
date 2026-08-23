@@ -128,3 +128,64 @@ test('adds actionable locations after an ambiguous edit failure', async () => {
   assert.match(result.content.at(-1).text, /Match 2:/);
   assert.equal(status.snapshot().editHints, 1);
 });
+
+test('blocks an unchanged retry after a deterministic edit failure', async () => {
+  const content = 'const target = true;\nconst target = true;\n';
+  const { ctx, handlers } = fixture(content);
+  const status = installResilience(ctx);
+  const exec = {
+    name: 'edit', arguments: { file_path: 'file.ts', old_string: 'const target = true;', new_string: 'const target = false;' },
+    agent: { session: { id: 'session', header: { cwd: 'C:\\workspace' } } }, signal: new AbortController().signal,
+  };
+  await handlers.get('tools/post-execute')[0](exec, {
+    isError: true,
+    error: { message: 'old_string matched 2 times; provide a more specific old_string' },
+    content: [{ type: 'text', text: 'ambiguous edit' }],
+  }, async () => ({ kind: 'delegated' }));
+  const blocked = await handlers.get('tools/execute')[0](exec, async () => { throw new Error('repeat delegated unexpectedly'); });
+  assert.equal(blocked.error.code, 'OCUI_REPEATED_FAILED_CALL');
+  assert.match(blocked.error.message, /Make the replacement unique/);
+  assert.equal(status.snapshot().repeatedFailureBlocks, 1);
+});
+
+test('allows a read-required edit after the file has been explicitly read', async () => {
+  const { ctx, handlers } = fixture();
+  installResilience(ctx);
+  const exec = {
+    name: 'edit', arguments: { file_path: 'file.ts', old_string: 'current', new_string: 'updated' },
+    agent: { session: { id: 'session', header: { cwd: 'C:\\workspace' } } }, signal: new AbortController().signal,
+  };
+  await handlers.get('tools/post-execute')[0](exec, {
+    isError: true,
+    error: { message: 'edit requires reading the file first' },
+    content: [{ type: 'text', text: 'read the file, then retry' }],
+  }, async () => ({ kind: 'delegated' }));
+  await handlers.get('tools/post-execute')[0]({
+    name: 'read', arguments: { file_path: 'file.ts' }, agent: exec.agent,
+  }, { isError: false, content: [] }, async () => ({ kind: 'delegated' }));
+  const delegated = await handlers.get('tools/execute')[0](exec, async () => ({ kind: 'delegated' }));
+  assert.deepEqual(delegated, { kind: 'delegated' });
+});
+
+test('blocks an incomplete full rewrite of a large existing file', async () => {
+  const { ctx, handlers } = fixture('x'.repeat(20_000));
+  const status = installResilience(ctx);
+  const result = await handlers.get('tools/execute')[0]({
+    name: 'write', arguments: { file_path: 'large.ts', content: 'replacement'.repeat(100) },
+    agent: { session: { id: 'session', header: { cwd: 'C:\\workspace' } } }, signal: new AbortController().signal,
+  }, async () => { throw new Error('truncating write delegated unexpectedly'); });
+  assert.equal(result.error.code, 'OCUI_TRUNCATING_WRITE');
+  assert.match(result.error.message, /lost the file tail/);
+  assert.equal(status.snapshot().truncatingWritesBlocked, 1);
+});
+
+test('allows a full rewrite that preserves most of a large file', async () => {
+  const current = 'x'.repeat(20_000);
+  const { ctx, handlers } = fixture(current);
+  installResilience(ctx);
+  const result = await handlers.get('tools/execute')[0]({
+    name: 'write', arguments: { file_path: 'large.ts', content: current.slice(0, 18_000) },
+    agent: { session: { id: 'session', header: { cwd: 'C:\\workspace' } } }, signal: new AbortController().signal,
+  }, async () => ({ kind: 'delegated' }));
+  assert.deepEqual(result, { kind: 'delegated' });
+});

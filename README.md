@@ -30,6 +30,9 @@ It replaces the rough provider controls with an integrated model picker, adds a 
 - Direct DeepSeek API, DeepSeek web search, and bundled web tooling disabled by default.
 - Bounded automatic recovery for DSH's `PI_AI_ERROR / network_error` failure.
 - Guarded file edits: outside-workspace mutations are blocked, repeated no-op edits are absorbed, and stale edit failures include a fresh exact excerpt.
+- Deterministic failure circuit breaker: an unchanged retry after an ambiguous, stale, or unread edit is stopped immediately with corrective guidance.
+- Large-file truncation protection: suspicious full rewrites that lose more than 25% of an existing large file are blocked before data is discarded.
+- Compact root-agent workflow guidance for exact reads, unique edits, preserving file tails, and verification before completion.
 - Inline editing and an append-only branch timeline for previous messages.
 - A phone-ready LAN gateway that proxies the complete DSH app, including streaming WebSockets.
 
@@ -114,6 +117,8 @@ In DSH Web, check that:
 - A vision model can call `read_image` directly.
 - A text-only model can call `read_image` through the vision worker.
 - An image chat can switch to a text-only model and continue with preserved visual context.
+- An identical retry after a deterministic edit failure is blocked and tells the agent what must change.
+- A partial rewrite cannot silently truncate an existing large file.
 
 ## Network and privacy
 
@@ -131,7 +136,8 @@ Credentials, DSH settings, model caches, sessions, and personal paths are never 
 ```text
 plugin/
   lib/index.js       Backend integration, discovery, usage, and vision routing
-  lib/resilience.js  Network retry, workspace guard, and edit recovery
+  lib/resilience.js  Network retry, edit recovery, repeat-call and truncation guards
+  lib/workflow.js    Concise reliability guidance for root coding agents
   lib/client.js      Sidebar usage panel and model picker UI
   package.json
 gateway/             Authenticated LAN proxy and responsive mobile shell

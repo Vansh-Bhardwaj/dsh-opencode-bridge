@@ -548,12 +548,12 @@ window.__ModuleLoader__.load({
             React.createElement('button', { type: 'button', className: 'oc-refresh' + (state.refreshing ? ' oc-spin' : ''), disabled: state.refreshing, title: 'Refresh usage', 'aria-label': 'Refresh usage', onClick: refresh }, React.createElement(RefreshIcon, null)),
             React.createElement('button', { type: 'button', className: 'oc-close', title: 'Close', 'aria-label': 'Close usage panel', onClick: function () { setOpen(false); } }, React.createElement(CloseIcon, null))),
           body,
-          state.bridge ? React.createElement('div', { className: 'oc-protection', title: 'Automatic transport retries, guarded workspace edits, and vision delegation are active' },
+          state.bridge ? React.createElement('div', { className: 'oc-protection', title: 'Automatic retries, deterministic failure blocking, truncation protection, workflow guidance, and vision delegation are active' },
             React.createElement('span', { className: 'oc-protectionDot' }),
             React.createElement('strong', null, 'Harness protection'),
             React.createElement('span', null,
-              (state.bridge.resilience.retries || 0) + ' retries · ' +
-              ((state.bridge.resilience.recoveredEditNoops || 0) + (state.bridge.resilience.recoveredLineEndings || 0) + (state.bridge.resilience.editHints || 0)) + ' edit recoveries · ' +
+              ((state.bridge.resilience.retries || 0) + (state.bridge.resilience.recoveredEditNoops || 0) + (state.bridge.resilience.recoveredLineEndings || 0) + (state.bridge.resilience.editHints || 0)) + ' recovered · ' +
+              ((state.bridge.resilience.repeatedFailureBlocks || 0) + (state.bridge.resilience.truncatingWritesBlocked || 0)) + ' unsafe calls blocked · ' +
               (state.bridge.vision.route ? state.bridge.vision.route.name : 'vision ready'))) : null,
           state.ok ? React.createElement('div', { className: 'oc-panelFooter' },
             React.createElement('span', null, state.updatedAt ? ('Updated ' + new Date(state.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : 'Live usage'),
