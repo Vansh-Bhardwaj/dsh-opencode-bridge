@@ -102,6 +102,8 @@ window.__ModuleLoader__.load({
       '.oc-fill{height:100%;border-radius:inherit;background:var(--oc-accent);transition:width .2s cubic-bezier(.22,1,.36,1)}',
       '.oc-reset{margin-top:5px;color:var(--dsw-alias-label-caption);font-size:11px;line-height:15px}',
       '.oc-panelFooter{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--dsw-alias-border-l3);margin:0 6px;padding:8px 2px 5px;color:var(--dsw-alias-label-caption);font-size:10px;line-height:14px}',
+      '.oc-protection{display:flex;align-items:center;gap:7px;margin:2px 8px 0;padding:8px 2px;border-top:1px solid var(--dsw-alias-border-l3);color:var(--dsw-alias-label-caption);font-size:11px;line-height:16px}',
+      '.oc-protection strong{color:var(--dsw-alias-label-secondary);font-weight:500}.oc-protectionDot{width:6px;height:6px;border-radius:50%;background:var(--oc-green);flex:none}',
       '.oc-manageLink{color:var(--dsw-alias-label-secondary);text-decoration:none;white-space:nowrap}.oc-manageLink:hover{color:var(--dsw-alias-label-primary);text-decoration:underline}',
       '.oc-loading{padding:8px 10px 12px;display:flex;flex-direction:column;gap:9px}',
       '.oc-skeleton{height:46px;border-radius:8px;background:var(--dsw-alias-interactive-bg-hover);opacity:.75}',
@@ -441,9 +443,13 @@ window.__ModuleLoader__.load({
           setState({ ok: false, loading: false, refreshing: false, error: 'Connection unavailable' });
           return Promise.resolve();
         }
-        return connection.rpc.call('/ocui', 'usage', null).then(function (r) {
+        return Promise.all([
+          connection.rpc.call('/ocui', 'usage', null),
+          connection.rpc.call('/ocui', 'status', null).catch(function () { return null; })
+        ]).then(function (results) {
+          var r = results[0]; var status = results[1];
           if (r && r.ok && r.value && r.value.ok) {
-            setState(Object.assign({}, r.value, { loading: false, refreshing: false, updatedAt: Date.now() }));
+            setState(Object.assign({}, r.value, { bridge: status && status.ok && status.value && status.value.ok ? status.value : null, loading: false, refreshing: false, updatedAt: Date.now() }));
           } else {
             var detail = (r && r.value && r.value.error) || (r && r.error && (r.error.message || r.error.code)) || 'Usage request failed';
             setState({ ok: false, loading: false, refreshing: false, error: detail });
@@ -488,7 +494,7 @@ window.__ModuleLoader__.load({
         }
       }
       var accent = state.ok ? accentFor(worst, 'ok') : '#85858d';
-      var summary = state.loading ? 'Checking limits…' : (state.ok ? (windows.length + ' limits') : 'Usage unavailable');
+      var summary = state.loading ? 'Checking limits…' : (state.ok ? (windows.length + ' limits · protected') : 'Usage unavailable');
       var tip = state.ok ? ('OpenCode Go · ' + worst + '% highest usage') : ('OpenCode Go' + (state.error ? ': ' + state.error : ''));
 
       var trigger = React.createElement('button', {
@@ -542,6 +548,10 @@ window.__ModuleLoader__.load({
             React.createElement('button', { type: 'button', className: 'oc-refresh' + (state.refreshing ? ' oc-spin' : ''), disabled: state.refreshing, title: 'Refresh usage', 'aria-label': 'Refresh usage', onClick: refresh }, React.createElement(RefreshIcon, null)),
             React.createElement('button', { type: 'button', className: 'oc-close', title: 'Close', 'aria-label': 'Close usage panel', onClick: function () { setOpen(false); } }, React.createElement(CloseIcon, null))),
           body,
+          state.bridge ? React.createElement('div', { className: 'oc-protection', title: 'Automatic transport retries, guarded workspace edits, and vision delegation are active' },
+            React.createElement('span', { className: 'oc-protectionDot' }),
+            React.createElement('strong', null, 'Harness protection'),
+            React.createElement('span', null, (state.bridge.resilience.retries || 0) + ' retries · vision ready')) : null,
           state.ok ? React.createElement('div', { className: 'oc-panelFooter' },
             React.createElement('span', null, state.updatedAt ? ('Updated ' + new Date(state.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : 'Live usage'),
             React.createElement('a', { className: 'oc-manageLink', href: 'https://opencode.ai/workspace', target: '_blank', rel: 'noreferrer' }, 'Open dashboard ↗')) : null);

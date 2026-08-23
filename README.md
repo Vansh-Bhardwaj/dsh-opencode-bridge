@@ -6,7 +6,7 @@
 
 An independent companion plugin that makes OpenCode Go and Zen feel native inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
 
-It replaces the rough provider controls with an integrated model picker, adds a real usage dashboard, keeps the model catalog current, and lets text-only models work in image conversations through an automatic vision worker.
+It replaces the rough provider controls with an integrated model picker, adds a real usage dashboard, keeps the model catalog current, and lets text-only models work in image conversations through an automatic vision worker. Version 2 also adds recovery guards, append-only message versions, and an authenticated local-network mobile remote.
 
 > [!IMPORTANT]
 > This is a community project. It is not affiliated with or endorsed by DeepSeek or OpenCode.
@@ -28,6 +28,10 @@ It replaces the rough provider controls with an integrated model picker, adds a 
 - Preserved image descriptions when switching an existing image chat to a text-only model.
 - DeepSeek V4 Flash Vision Exp preference when it is available in OpenCode Go.
 - Direct DeepSeek API, DeepSeek web search, and bundled web tooling disabled by default.
+- Bounded automatic recovery for DSH's `PI_AI_ERROR / network_error` failure.
+- Guarded file edits: outside-workspace mutations are blocked, repeated no-op edits are absorbed, and stale edit failures include a fresh exact excerpt.
+- Inline editing and an append-only branch timeline for previous messages.
+- A phone-ready LAN gateway that proxies the complete DSH app, including streaming WebSockets.
 
 ## How vision routing works
 
@@ -46,7 +50,7 @@ The worker is chosen from the current OpenCode catalog instead of a hard-coded c
 ## Requirements
 
 - Windows with PowerShell 7.
-- DeepSeek Harness (`@deepseek-ai/dsh`), tested with `0.1.0-rc.7`.
+- DeepSeek Harness (`@deepseek-ai/dsh`), tested with `0.1.1-rc.2`.
 - An OpenCode Go credential stored in DSH as `OPENCODE_GO_API_KEY`.
 - Python 3 for model-catalog synchronization. Codex's bundled Python is detected when available.
 
@@ -65,6 +69,7 @@ The installer:
 2. Copies this plugin and its catalog synchronizer into `~/.dsh`.
 3. Enables the plugin in the DSH web profile.
 4. Disables direct DeepSeek API and bundled DeepSeek web tools by default.
+5. Installs the audited, pinned append-only conversation-history bundle.
 
 To retain those DeepSeek services:
 
@@ -80,13 +85,24 @@ Create Desktop and Start-menu shortcuts that open DSH Web without a visible term
 ./launcher/Install-DSHWebShortcut.ps1
 ```
 
+Use a custom icon (it is copied into the launcher install directory and reused on later reinstalls):
+
+```powershell
+./launcher/Install-DSHWebShortcut.ps1 -IconPath 'C:\path\to\deepseek.ico'
+```
+
 The shortcut reuses an existing server on port `3080`. Otherwise it starts `dsh web --no-open` in a hidden process, waits for the local server, and opens the default browser. Startup diagnostics are written to `~/.dsh/logs/`.
+
+It also installs **Harness Remote Access** in the Start menu. That entry opens a computer-only pairing page. Open the one-time link on a phone connected to the same Wi-Fi, then add Harness to the phone's home screen. The phone receives the full native DSH surface—sessions, live output, composer, editing, models, permissions, goals, and usage—not a separate dashboard.
+
+DSH itself remains bound to `127.0.0.1:3080`. The gateway binds only the private IPv4 interfaces that have a default route, authenticates HTTP and WebSocket requests, uses signed HttpOnly/SameSite sessions, rate-limits failed pairing, and persists only random authorized-device IDs. It is intentionally LAN-only; there is no Tailscale or public relay.
 
 ## Verify
 
 ```powershell
 node --check ./plugin/lib/index.js
 node --check ./plugin/lib/client.js
+node --test
 python ./scripts/sync-dsh-models.py --dry-run
 dsh web
 ```
@@ -106,6 +122,8 @@ In DSH Web, check that:
 | `opencode.ai` | OpenCode credential, prompts, and attached images when an OpenCode model is used | Model inference, usage limits, and catalog discovery |
 | `models.dev` | Public model identifiers only | Supplemental model capability metadata |
 
+The LAN gateway does not send remote-access traffic to a third party. Its default transport is HTTP for zero-setup use on a trusted home LAN; do not use it on public or hostile Wi-Fi. Pairing authentication prevents unsolicited access but does not replace transport encryption against an on-path LAN attacker.
+
 Credentials, DSH settings, model caches, sessions, and personal paths are never included in this repository. The plugin does not add telemetry.
 
 ## Repository layout
@@ -113,11 +131,15 @@ Credentials, DSH settings, model caches, sessions, and personal paths are never 
 ```text
 plugin/
   lib/index.js       Backend integration, discovery, usage, and vision routing
+  lib/resilience.js  Network retry, workspace guard, and edit recovery
   lib/client.js      Sidebar usage panel and model picker UI
   package.json
+gateway/             Authenticated LAN proxy and responsive mobile shell
+vendor/              Audited pinned append-only conversation history plugin
+launcher/            Hidden launcher and Desktop/Start-menu installer
 scripts/
   sync-dsh-models.py Atomic OpenCode catalog synchronizer
-install.ps1          Idempotent Windows installer
+install.ps1          Idempotent plugin and conversation-history installer
 ```
 
 ## Security

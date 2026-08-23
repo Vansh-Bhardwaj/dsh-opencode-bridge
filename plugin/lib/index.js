@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { installResilience } from './resilience.js';
 
 const DEFAULT_VISION_MODEL = 'deepseek-v4-flash-vision-exp';
 const VISION_ALIAS = 'qwen-plus-latest';
@@ -131,7 +132,10 @@ function compareQwenPlus(a, b) {
 export function apply(ctx, config = {}) {
   const visionProvider = config.visionProvider || DEFAULT_VISION_PROVIDER;
   const configuredVisionModel = config.visionModel || DEFAULT_VISION_MODEL;
-  const visionMaxTokens = Number.isSafeInteger(config.visionMaxTokens) ? config.visionMaxTokens : 4096;
+  const visionMaxTokens = Number.isSafeInteger(config.visionMaxTokens) ? config.visionMaxTokens : 1600;
+  const visionDescriptionChars = Number.isSafeInteger(config.visionDescriptionChars) ? config.visionDescriptionChars : 6000;
+  const visionVisibleChars = Number.isSafeInteger(config.visionVisibleChars) ? config.visionVisibleChars : 1800;
+  const resilience = installResilience(ctx, config);
   const descriptionCache = new Map();
   const descriptionInflight = new Map();
   const selectionRefs = new Map();
@@ -247,7 +251,7 @@ export function apply(ctx, config = {}) {
         const result = await run.result;
         const output = textFromBlocks(result.output);
         if (!output) throw new Error(result.diagnostic || `Vision subagent stopped with ${result.stopReason}.`);
-        const value = { text: output, route };
+        const value = { text: output.slice(0, visionDescriptionChars), route };
         descriptionCache.set(cacheKey, value);
         return value;
       } finally {
@@ -309,7 +313,7 @@ export function apply(ctx, config = {}) {
         : part);
       translated.push({
         type: 'text',
-        text: `${VISION_CONTEXT_PREFIX}\n${analysis.text}\n[End vision subagent context]`,
+        text: `${VISION_CONTEXT_PREFIX}\n${analysis.text.slice(0, visionVisibleChars)}${analysis.text.length > visionVisibleChars ? '\n[Full visual analysis retained by the bridge; visible summary truncated.]' : ''}\n[End vision subagent context]`,
       });
       return callOriginal('prompt', { ...payload, content: translated });
     } catch (error) {
@@ -502,6 +506,7 @@ export function apply(ctx, config = {}) {
   let gen = 0;
 
   ctx.connection.rpc.handle('/ocui', async (endpoint) => {
+    if (endpoint === 'status') return { ok: true, value: { ok: true, resilience: resilience.snapshot(), vision: { provider: visionProvider, configuredModel: configuredVisionModel, route: visionRouteCache } } };
     if (endpoint !== 'usage') return rpcError('internal', 'unknown OCUI endpoint: ' + endpoint);
     if (cache && Date.now() - cacheAt < 30000) return { ok: true, value: cache };
     if (inflight) return inflight;
@@ -532,5 +537,5 @@ export function apply(ctx, config = {}) {
 
 export const inject = [
   'agentDefaultModel', 'agents', 'apiProxy', 'attachments', 'connection', 'credentials',
-  'llm', 'subagents', 'subprocess', 'timer', 'tools',
+  'fs', 'llm', 'subagents', 'subprocess', 'timer', 'tools',
 ];

@@ -2,6 +2,7 @@
 Thumbs.db
 *.log
 *.tmp
+*.tgz
 .env
 .credentials.yaml
 cache/

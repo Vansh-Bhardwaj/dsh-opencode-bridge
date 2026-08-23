@@ -3,14 +3,19 @@ param(
   [ValidateRange(1, 65535)]
   [int]$Port = 3080,
 
+  [ValidateRange(1, 65535)]
+  [int]$LanPort = 3443,
+
   [ValidateRange(1, 120)]
   [int]$StartupTimeoutSeconds = 30,
 
-  [switch]$NoOpen
+  [switch]$NoOpen,
+
+  [switch]$RemoteAccess
 )
 
 $ErrorActionPreference = 'Stop'
-$url = "http://127.0.0.1:$Port/"
+$url = "http://127.0.0.1:$LanPort/"
 
 function Test-LocalPort {
   param([int]$TargetPort)
@@ -85,8 +90,38 @@ try {
     }
   }
 
+  if (-not (Test-LocalPort -TargetPort $LanPort)) {
+    $gatewayScript = Join-Path $PSScriptRoot 'gateway\server.mjs'
+    if (-not (Test-Path -LiteralPath $gatewayScript)) {
+      throw "LAN gateway is not installed: $gatewayScript"
+    }
+    $node = (Get-Command node.exe -ErrorAction Stop).Source
+    $logDirectory = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.dsh\logs'
+    New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+    $gateway = Start-Process `
+      -FilePath $node `
+      -ArgumentList @($gatewayScript) `
+      -WindowStyle Hidden `
+      -Environment @{ DSH_WEB_PORT = [string]$Port; DSH_LAN_PORT = [string]$LanPort } `
+      -RedirectStandardOutput (Join-Path $logDirectory 'lan-gateway.stdout.log') `
+      -RedirectStandardError (Join-Path $logDirectory 'lan-gateway.stderr.log') `
+      -PassThru
+    $deadline = [DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+      if (Test-LocalPort -TargetPort $LanPort) { break }
+      if ($gateway.HasExited) {
+        $detail = (Get-Content -LiteralPath (Join-Path $logDirectory 'lan-gateway.stderr.log') -Tail 12) -join [Environment]::NewLine
+        throw ($detail ?? "LAN gateway exited with code $($gateway.ExitCode).")
+      }
+      Start-Sleep -Milliseconds 200
+    }
+    if (-not (Test-LocalPort -TargetPort $LanPort)) {
+      throw "Harness LAN gateway did not become available on port $LanPort."
+    }
+  }
+
   if (-not $NoOpen) {
-    Start-Process $url
+    Start-Process ($RemoteAccess ? ($url + '_bridge/access') : $url)
   }
 }
 catch {

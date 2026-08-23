@@ -28,6 +28,12 @@ jobs:
         run: |
           node --check ./plugin/lib/index.js
           node --check ./plugin/lib/client.js
+          node --check ./plugin/lib/resilience.js
+          node --check ./gateway/server.mjs
+
+      - name: Run unit tests
+        shell: pwsh
+        run: npm test
 
       - name: Compile Python synchronizer
         shell: pwsh
@@ -43,12 +49,17 @@ jobs:
             [ref]$errors
           )
           if ($errors.Count) { throw ($errors | Out-String) }
+          foreach ($script in @('./launcher/Start-DSHWeb.ps1', './launcher/Install-DSHWebShortcut.ps1')) {
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script), [ref]$null, [ref]$errors)
+            if ($errors.Count) { throw ($errors | Out-String) }
+          }
 
       - name: Test isolated installation
         shell: pwsh
         run: |
           $testHome = Join-Path $PWD 'work/test-dsh-home'
-          ./install.ps1 -DshHome $testHome
+          ./install.ps1 -DshHome $testHome -SkipConversationHistory
           $installed = Join-Path $testHome '.agent-presets/ocui/plugin/lib/index.js'
           if (-not (Test-Path -LiteralPath $installed)) {
             throw 'Plugin installation test failed.'

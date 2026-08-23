@@ -1,0 +1,11 @@
+{
+  "name": "DeepSeek Harness Remote",
+  "short_name": "Harness",
+  "description": "Secure local-network access to DeepSeek Harness",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111113",
+  "theme_color": "#151517",
+  "icons": [{ "src": "/_bridge/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

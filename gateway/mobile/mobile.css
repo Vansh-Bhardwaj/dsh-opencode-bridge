@@ -1,0 +1,21 @@
+:root{--dsh-mobile-bar:56px}
+html{height:100%;overscroll-behavior:none}
+body{min-height:100%;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);overscroll-behavior:none}
+.dsh-lan-status{position:fixed;z-index:70;right:max(10px,env(safe-area-inset-right));top:max(9px,env(safe-area-inset-top));height:28px;display:flex;align-items:center;gap:6px;padding:0 9px;border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font:var(--dsw-font-xxxs-11);box-sizing:border-box}
+.dsh-lan-status::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-success-primary)}
+@media (max-width:760px){
+  :root{--dsh-mobile-bar:58px}
+  body{font-size:16px}
+  button,[role=button],a,input,textarea{touch-action:manipulation}
+  button,[role=button]{min-width:36px;min-height:36px}
+  textarea,input,select{font-size:16px!important}
+  .dsh-lan-status{top:auto;right:10px;bottom:calc(env(safe-area-inset-bottom) + 9px);height:38px;padding:0 12px;background:color-mix(in srgb,var(--dsw-alias-bg-layer-2) 94%,transparent);box-shadow:var(--dsw-shadow-lv2)}
+  [class*=sidebar]{max-width:min(88vw,320px)}
+  [data-slot="root"]>[class]:has([aria-label="Collapse sidebar"]){grid-template-columns:56px minmax(0,1fr) 0!important}
+  [data-slot="sidebar"]>[class]:has([aria-label="Collapse sidebar"]){position:fixed!important;z-index:60;inset:0 auto 0 0;width:min(82vw,300px)!important;max-width:min(82vw,300px);box-shadow:12px 0 28px #0008}
+  [class*=composer]{padding-bottom:max(8px,env(safe-area-inset-bottom))}
+  [role=dialog]{max-width:calc(100vw - 20px);max-height:calc(100dvh - 24px)}
+  .oc-usagePanel{left:10px!important;right:10px!important;bottom:calc(env(safe-area-inset-bottom) + 58px)!important;width:auto!important;max-height:calc(100dvh - 88px);overflow:auto}
+}
+@media (display-mode:standalone) and (max-width:760px){.dsh-lan-status{bottom:calc(env(safe-area-inset-bottom) + 7px)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}

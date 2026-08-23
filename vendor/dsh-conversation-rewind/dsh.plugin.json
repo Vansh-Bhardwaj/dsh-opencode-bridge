@@ -1,0 +1,13 @@
+{
+  "id": "dsh-conversation-rewind",
+  "version": "0.1.7",
+  "main": "lib/index.js",
+  "description": "Same-Session append-only conversation branches and safe user-message editing for DSH.",
+  "engines": {
+    "dsh": ">=0.1.0-rc.6"
+  },
+  "contributes": {
+    "tools": [],
+    "skills": []
+  }
+}

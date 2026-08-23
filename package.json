@@ -1,0 +1,10 @@
+{
+  "name": "dsh-opencode-bridge-workspace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check plugin/lib/index.js && node --check plugin/lib/client.js && node --check gateway/server.mjs"
+  },
+  "engines": { "node": ">=22" }
+}
