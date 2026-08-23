@@ -99,7 +99,8 @@ async function loadAsset(assetDirectory, name, contentType) {
   return { body: await readFile(new URL(`../mobile/${name}`, import.meta.url)), contentType };
 }
 
-function injectShell(html) {
+export function injectShell(html) {
+  const bootstrap = '<script src="/_bridge/bootstrap.js"></script>';
   const additions = [
     '<meta name="theme-color" content="#151517">',
     '<meta name="mobile-web-app-capable" content="yes">',
@@ -109,7 +110,8 @@ function injectShell(html) {
     '<link rel="stylesheet" href="/_bridge/mobile.css">',
     '<script defer src="/_bridge/mobile.js"></script>',
   ].join('');
-  return html.includes('</head>') ? html.replace('</head>', `${additions}</head>`) : html;
+  const bootstrapped = html.replace(/<head(\s[^>]*)?>/i, (head) => `${head}${bootstrap}`);
+  return bootstrapped.includes('</head>') ? bootstrapped.replace('</head>', `${additions}</head>`) : bootstrapped;
 }
 
 export function createGateway(options) {
@@ -169,6 +171,7 @@ export function createGateway(options) {
 
   async function bridgeAsset(request, response, pathname) {
     const assets = {
+      '/_bridge/bootstrap.js': ['bootstrap.js', 'text/javascript; charset=utf-8'],
       '/_bridge/mobile.css': ['mobile.css', 'text/css; charset=utf-8'],
       '/_bridge/mobile.js': ['mobile.js', 'text/javascript; charset=utf-8'],
       '/_bridge/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json; charset=utf-8'],
@@ -178,7 +181,7 @@ export function createGateway(options) {
     const entry = assets[pathname];
     if (!entry) return false;
     const asset = await loadAsset(undefined, entry[0], entry[1]);
-    const cacheControl = pathname === '/_bridge/mobile.css' || pathname === '/_bridge/mobile.js'
+    const cacheControl = pathname === '/_bridge/bootstrap.js' || pathname === '/_bridge/mobile.css' || pathname === '/_bridge/mobile.js'
       ? 'no-store'
       : 'private, max-age=300';
     send(response, 200, asset.body, { 'content-type': asset.contentType, 'cache-control': cacheControl });

@@ -47,6 +47,31 @@
     openButton?.setAttribute('aria-expanded', String(open));
   }
 
+  function wireSettings() {
+    for (const dialog of document.querySelectorAll('[role="dialog"][aria-modal="true"]')) {
+      const nav = [...dialog.children].find((element) => element.tagName === 'NAV');
+      const content = nav?.nextElementSibling;
+      if (!nav || !content) continue;
+      const title = nav.children[0];
+      const tabs = nav.children[1];
+      const header = content.children[0];
+      const options = content.children[1];
+      const actions = header?.children[0];
+      const close = header?.children[1];
+
+      dialog.setAttribute('data-dsh-mobile-settings', '');
+      nav.setAttribute('data-dsh-mobile-settings-nav', '');
+      title?.setAttribute('data-dsh-mobile-settings-title', '');
+      tabs?.setAttribute('data-dsh-mobile-settings-tabs', '');
+      content.setAttribute('data-dsh-mobile-settings-content', '');
+      header?.setAttribute('data-dsh-mobile-settings-header', '');
+      actions?.setAttribute('data-dsh-mobile-settings-actions', '');
+      close?.setAttribute('data-dsh-mobile-settings-close', '');
+      options?.setAttribute('data-dsh-mobile-settings-options', '');
+      header?.toggleAttribute('data-has-actions', Boolean(actions?.children.length));
+    }
+  }
+
   openButton?.addEventListener('click', () => {
     wireFrame();
     sidebarToggle('open')?.click();
@@ -62,6 +87,7 @@
 
   const observer = new MutationObserver(() => {
     wireFrame();
+    wireSettings();
     syncSidebarState();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-sidebar-collapsed', 'data-details-collapsed'] });
@@ -70,6 +96,7 @@
     syncSidebarState();
   }, { passive: true });
   wireFrame();
+  wireSettings();
 
   fetch('/_bridge/status', { credentials: 'same-origin' })
     .then((response) => document.body.toggleAttribute('data-dsh-lan-connected', response.ok))

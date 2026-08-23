@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 - Replaced the desktop rail on phones with a touch-native sessions drawer, backdrop, app bar, and full-screen details treatment.
 - Removed the Local Remote status pill and preserved DSH-owned cookies through the authenticated gateway.
 - Disabled stale caching for the injected mobile shell assets so phone layout fixes apply immediately.
+- Restored iPhone LAN sessions with an early secure `crypto.randomUUID` compatibility bootstrap.
+- Reworked Settings into a full-screen, scroll-safe mobile layout with accessible horizontal sections.
 
 ## 2.0.0 - 2026-08-23
 
