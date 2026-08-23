@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Added locally generated QR codes to the computer-only Remote Access page.
+- Clarified the loopback DSH server and authenticated LAN gateway architecture in the pairing UI.
+- Fixed repeated launcher installs nesting the gateway directory and hardened late upstream proxy failures.
+
 ## 2.0.0 - 2026-08-23
 
 - Added bounded automatic recovery for misclassified provider network failures.

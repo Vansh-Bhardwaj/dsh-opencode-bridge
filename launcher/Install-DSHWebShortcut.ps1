@@ -28,7 +28,9 @@ $sourceGateway = Join-Path (Split-Path -Parent $PSScriptRoot) 'gateway'
 if (-not (Test-Path -LiteralPath (Join-Path $sourceGateway 'server.mjs'))) {
   throw "LAN gateway source not found: $sourceGateway"
 }
-Copy-Item -LiteralPath $sourceGateway -Destination (Join-Path $InstallRoot 'gateway') -Recurse -Force
+$installedGateway = Join-Path $InstallRoot 'gateway'
+New-Item -ItemType Directory -Path $installedGateway -Force | Out-Null
+Copy-Item -Path (Join-Path $sourceGateway '*') -Destination $installedGateway -Recurse -Force
 
 $installedIcon = Join-Path $InstallRoot 'deepseek.ico'
 if (-not [string]::IsNullOrWhiteSpace($IconPath)) {

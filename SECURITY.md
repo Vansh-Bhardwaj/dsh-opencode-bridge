@@ -23,3 +23,5 @@ Reports about credential exposure, unsafe model-routing behavior, untrusted cata
 - The zero-setup default is HTTP and is intended for a trusted private LAN. It does not defend against an attacker already able to sniff or alter that LAN. Do not expose port `3443` through router forwarding and do not use the gateway on public Wi-Fi.
 
 The vendored `dsh-conversation-rewind` source is pinned to upstream commit `1414322a483d40cf83539f8badc59a93b05d0c77` under its MIT license. It was reviewed for subprocess, filesystem mutation, credential, and outbound-network access; none is present. Its production dependency audit reported zero known vulnerabilities at integration time.
+
+Remote Access QR codes are generated locally with the MIT-licensed `qrcode-generator` 2.0.4 implementation. The signed pairing URL remains inside the loopback-only access page and is never submitted to an external QR service. Its vendored browser build and license are stored under `gateway/mobile/vendor/`.
